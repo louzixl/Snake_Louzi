@@ -16,6 +16,7 @@
 #define IDC_MYICON				2
 #ifndef IDC_STATIC
 #define IDC_STATIC				-1
+#define IDC_BTN_STOP             666
 #endif
 // 新对象的下一组默认值
 //

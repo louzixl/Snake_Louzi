@@ -5,9 +5,13 @@
 
 class Food{
 private:
-	Point p;
+	Point m_p;
 public:
-	Food() { Random(p.x, p.y); }
+	explicit Food() { Random(m_p.m_x, m_p.m_y); }
+	~Food() {}
+	Point &GetFood();
+	void SetFood();
+	void DrawFood(HWND hwnd, HDC hdc);
 };
 
 #endif

@@ -3,6 +3,7 @@
 
 #include "stdafx.h"
 #include "Snake.h"
+#include "SnakeC.h"
 #include <ctime>
 
 #define MAX_LOADSTRING 100
@@ -13,10 +14,19 @@ TCHAR szTitle[MAX_LOADSTRING];					// 标题栏文本
 TCHAR szWindowClass[MAX_LOADSTRING];			// 主窗口类名
 
 //自定义全局变量
+extern const int TIMER = 1;
 extern const int g_nBoard = 10;
 extern const int g_nSideOfGrid = 10;
 extern const int g_nSideOfGame = 30;
 extern const int g_nInfoX = 10;
+int g_nWidth;
+int g_nHeight;
+SnakeC *g_snake;
+Food *g_food;
+wchar_t g_cScore[10];
+wchar_t g_cSpeed[10];
+HWND g_hScore, g_hScoreEdit, g_hSpeed, g_hSpeedEdit, g_hStop;
+bool g_bStop;
 
 // 此代码模块中包含的函数的前向声明: 
 ATOM				MyRegisterClass(HINSTANCE hInstance);
@@ -134,12 +144,30 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
 	int wmId, wmEvent;
 	PAINTSTRUCT ps;
-	HDC hdc;
+	HDC hdc, memDc;
+	HBITMAP bitmap;
 
 	switch (message)
 	{
 	case WM_CREATE:
 		Align(hWnd);
+		InitGame();
+		g_hScore = CreateWindow(L"STATIC", L"Score: ", WS_CHILD | WS_VISIBLE | BS_CENTER, 
+			g_nBoard * 2 + g_nSideOfGame*g_nSideOfGrid + 10, g_nBoard + 30, 50, 20, 
+			hWnd, NULL, GetModuleHandle(NULL), NULL);
+		g_hScoreEdit = CreateWindow(L"EDIT", g_cScore, WS_CHILD | WS_VISIBLE | ES_RIGHT,
+			g_nBoard * 2 + g_nSideOfGame*g_nSideOfGrid + 60, g_nBoard + 33, 30, 14,
+			hWnd, NULL, GetModuleHandle(NULL), NULL);
+		g_hSpeed = CreateWindow(L"STATIC", L"Speed: ", WS_CHILD | WS_VISIBLE | BS_CENTER,
+			g_nBoard * 2 + g_nSideOfGame*g_nSideOfGrid + 10, g_nBoard + 100, 50, 20,
+			hWnd, NULL, GetModuleHandle(NULL), NULL);
+		g_hSpeedEdit = CreateWindow(L"EDIT", g_cSpeed, WS_CHILD | WS_VISIBLE | ES_RIGHT,
+			g_nBoard * 2 + g_nSideOfGame*g_nSideOfGrid + 60, g_nBoard + 103, 30, 14,
+			hWnd, NULL, GetModuleHandle(NULL), NULL);
+		g_hStop = CreateWindow(L"BUTTON", L"Stop", WS_CHILD | WS_VISIBLE | BS_CENTER,
+			g_nBoard * 2 + g_nSideOfGame*g_nSideOfGrid + 25, g_nBoard + 170, 50, 20,
+			hWnd, (HMENU)IDC_BTN_STOP, GetModuleHandle(NULL), NULL);
+		SetTimer(hWnd, TIMER, g_snake->GetSpeed(), NULL);
 		break;
 	case WM_COMMAND:
 		wmId    = LOWORD(wParam);
@@ -147,6 +175,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 		// 分析菜单选择: 
 		switch (wmId)
 		{
+		case IDC_BTN_STOP:
+			StopGame(hWnd);
+			break;
 		case IDM_ABOUT:
 			DialogBox(hInst, MAKEINTRESOURCE(IDD_ABOUTBOX), hWnd, About);
 			break;
@@ -157,11 +188,48 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			return DefWindowProc(hWnd, message, wParam, lParam);
 		}
 		break;
+	case WM_TIMER:
+		g_snake->Move(hWnd, *g_food);
+		wsprintf(g_cScore, L"%d", g_snake->GetScore());
+		SetWindowText(g_hScoreEdit, g_cScore);
+		wsprintf(g_cSpeed, L"%d", g_snake->GetSpeed());
+		SetWindowText(g_hSpeedEdit, g_cSpeed);
+		InvalidateRect(hWnd, NULL, TRUE);
+		break;
+	case WM_KEYDOWN:
+		switch (wParam)
+		{
+		case VK_UP:
+			g_snake->SetDirection(UP);
+			break;
+		case VK_LEFT:
+			g_snake->SetDirection(LEFT);
+			break;
+		case VK_RIGHT:
+			g_snake->SetDirection(RIGHT);
+			break;
+		case VK_DOWN:
+			g_snake->SetDirection(DOWN);
+			break;
+		case VK_SPACE:
+			StopGame(hWnd);
+			break;
+		default:
+			break;
+		}
+		break;
 	case WM_PAINT:
 		hdc = BeginPaint(hWnd, &ps);
 		// TODO:  在此添加任意绘图代码...
-		DrawBK(hdc);
-		DrawInfo(hdc);
+		memDc = CreateCompatibleDC(hdc);
+		bitmap = CreateCompatibleBitmap(hdc, g_nWidth, g_nHeight);
+		SelectObject(memDc, bitmap);
+		DrawBK(memDc);
+		DrawInfo(memDc);
+		g_snake->DrawSnake(hWnd, memDc);
+		g_food->DrawFood(hWnd, memDc);
+		BitBlt(hdc, 0, 0, g_nWidth, g_nHeight, memDc, 0, 0, SRCCOPY);
+		DeleteObject(bitmap);
 		EndPaint(hWnd, &ps);
 		break;
 	case WM_DESTROY:
@@ -195,7 +263,7 @@ INT_PTR CALLBACK About(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
 
 void Align(HWND hWnd)
 {
-	int startX, startY, width, height;
+	int startX, startY;
 	int screenW, screenH, gameW, gameH, clientW, clientH;
 	RECT rect;
 
@@ -208,13 +276,13 @@ void Align(HWND hWnd)
 	GetClientRect(hWnd, &rect);
 	clientW = rect.right - rect.left;
 	clientH = rect.bottom - rect.top;
-	width = gameW - clientW + g_nBoard * 3 + g_nSideOfGrid*(g_nSideOfGame + g_nInfoX);
-	height = gameH - clientH + g_nBoard * 2 + g_nSideOfGrid*g_nSideOfGame;
+	g_nWidth = gameW - clientW + g_nBoard * 3 + g_nSideOfGrid*(g_nSideOfGame + g_nInfoX);
+	g_nHeight = gameH - clientH + g_nBoard * 2 + g_nSideOfGrid*g_nSideOfGame;
 
-	startX = (screenW - width) / 2;
-	startY = (screenH - height) / 2;
+	startX = (screenW - g_nWidth) / 2;
+	startY = (screenH - g_nHeight) / 2;
 
-	MoveWindow(hWnd, startX, startY, width, height, TRUE);
+	MoveWindow(hWnd, startX, startY, g_nWidth, g_nHeight, TRUE);
 }
 
 void DrawBK(HDC hdc)
@@ -232,7 +300,7 @@ void DrawBK(HDC hdc)
 void DrawInfo(HDC hdc)
 {
 	HPEN penFrame = CreatePen(BS_SOLID, 2, RGB(255, 255, 0));
-	HBRUSH brushInfo = CreateSolidBrush(RGB(150, 200, 255));
+	HBRUSH brushInfo = (HBRUSH)GetStockObject(WHITE_BRUSH);
 
 	SelectObject(hdc, penFrame);
 	SelectObject(hdc, brushInfo);
@@ -247,4 +315,48 @@ void Random(int &x, int &y)
 	srand(time(0));
 	x = rand() % 30;
 	y = rand() % 30;
+}
+
+void InitGame()
+{
+	g_snake = new SnakeC();
+	g_food = new Food();
+	g_bStop = false;
+	ZeroMemory(g_cScore, sizeof(g_cScore));
+	wsprintf(g_cScore, L"%d", g_snake->GetScore());
+	ZeroMemory(g_cSpeed, sizeof(g_cSpeed));
+	wsprintf(g_cSpeed, L"%d", g_snake->GetSpeed());
+}
+
+void OverGame(HWND hwnd)
+{
+	UINT res;
+
+	KillTimer(hwnd, TIMER);
+	delete g_snake;
+	delete g_food;
+	res = MessageBox(hwnd, L"You lost, start again?", L"Result", MB_YESNO);
+	if (res == IDYES)
+	{
+		InitGame();
+		SetTimer(hwnd, TIMER, g_snake->GetSpeed(), NULL);
+	}
+	else
+		PostQuitMessage(0);
+}
+
+void StopGame(HWND hwnd)
+{
+	if (g_bStop)
+	{
+		SetTimer(hwnd, TIMER, g_snake->GetSpeed(), NULL);
+		SetWindowText(g_hStop, L"Stop");
+		g_bStop = false;
+	}
+	else
+	{
+		KillTimer(hwnd, TIMER);
+		SetWindowText(g_hStop, L"Start");
+		g_bStop = true;
+	}
 }

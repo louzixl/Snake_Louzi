@@ -33,12 +33,21 @@
     <ClInclude Include="Food.h">
       <Filter>头文件</Filter>
     </ClInclude>
+    <ClInclude Include="SnakeC.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="stdafx.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
     <ClCompile Include="Snake.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="SnakeC.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="Food.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
   </ItemGroup>
